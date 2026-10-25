@@ -2,7 +2,6 @@
 
 import { GameClient } from './client/GameClient.js';
 import { loadProfile } from './ui/Settings.js';
-
 const bar = document.getElementById('load-bar');
 const text = document.getElementById('load-text');
 

@@ -7,7 +7,8 @@
 //
 // Usage: node tools/build.mjs
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { dirname, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,10 +59,33 @@ for (const file of order) {
 bundle += '\n})();\n';
 
 const template = readFileSync(resolve(root, 'tools/template.html'), 'utf8');
-const html = `${template}\n<script>\n${bundle.replace(/<\/script/g, '<\\/script')}</script>\n`;
+// Authored models: gzip + base64 into one script block (decoded by src/client/Assets.js).
+const assetDir = resolve(root, 'assets/models');
+const assets = {};
+let assetBytes = 0;
+if (existsSync(assetDir)) {
+  for (const f of readdirSync(assetDir).filter((n) => n.endsWith('.glb')).sort()) {
+    const raw = readFileSync(resolve(assetDir, f));
+    const gz = gzipSync(raw, { level: 9 });
+    assets[f] = gz.toString('base64');
+    assetBytes += gz.length;
+    console.log(`  asset ${f}: ${(raw.length / 1024).toFixed(0)} KB -> ${(gz.length / 1024).toFixed(0)} KB gzip`);
+  }
+}
+// Authored world textures (WebP, already compressed): base64 under tex/<name>.
+const texDir = resolve(root, 'assets/textures');
+if (existsSync(texDir)) {
+  let n = 0, bytes = 0;
+  for (const f of readdirSync(texDir).filter((x) => x.endsWith('.webp')).sort()) {
+    const raw = readFileSync(resolve(texDir, f));
+    assets[`tex/${f}`] = raw.toString('base64');
+    n++;
+    bytes += raw.length;
+  }
+  console.log(`  textures: ${n} files, ${(bytes / 1024).toFixed(0)} KB`);
+}
+const assetScript = `<script>window.__HL_ASSETS=${JSON.stringify(assets)};</script>`;
+const html = `${template}\n${assetScript}\n<script>\n${bundle.replace(/<\/script/g, '<\\/script')}</script>\n`;
 mkdirSync(resolve(root, 'dist'), { recursive: true });
 writeFileSync(resolve(root, 'dist/hairline.html'), html);
-// Standalone page for static hosting (GitHub Pages, Netlify, any web server).
-const page = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n<style>[hidden]{display:none!important}</style>\n</head>\n<body>\n${html}</body>\n</html>\n`;
-writeFileSync(resolve(root, 'index.html'), page);
 console.log(`Bundled ${order.length} modules, ${(html.length / 1024).toFixed(1)} KB -> dist/hairline.html`);

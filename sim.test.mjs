@@ -3,7 +3,6 @@
 
 import { SALTWORKS } from '../src/data/maps/saltworks.js';
 import { compileMap } from '../src/sim/MapCompiler.js';
-import { Heightfield } from '../src/sim/Heightfield.js';
 import { MOVEMENT } from '../src/data/movement.js';
 import { createPlayerState } from '../src/sim/PlayerState.js';
 import { runPlayerCmd } from '../src/sim/PlayerController.js';
@@ -16,6 +15,8 @@ import { AuthorityServer } from '../src/net/AuthorityServer.js';
 import { ClientPredictor } from '../src/net/ClientPredictor.js';
 import { createLoopback } from '../src/net/Transport.js';
 import { TICK_DT } from '../src/sim/Simulation.js';
+import { DOCKSIDE9 } from '../src/data/maps/dockside9.js';
+import { CollisionWorld } from '../src/sim/World.js';
 
 let failures = 0;
 function check(name, cond, detail = '') {
@@ -24,7 +25,8 @@ function check(name, cond, detail = '') {
 }
 
 const map = compileMap(SALTWORKS);
-const hf = new Heightfield(map);
+const hf = new CollisionWorld(map);
+const grid = map.legacyGrid;
 const stats = buildStatTable(DEFAULT_LOADOUT, ABILITIES.X.stats);
 
 function ctxFor(extra = {}) {
@@ -40,13 +42,13 @@ let seq = 0;
 const cmd = (buttons, yaw = 0, pitch = 0, weapon = null) => makeCmd(++seq, TICK_DT, buttons, yaw, pitch, weapon, undefined);
 
 // ---- map
-check('map compiles 48x40', map.cols === 48 && map.rows === 40);
+check('legacy grid compiles 48x40 to merged brushes', grid.cols === 48 && grid.rows === 40 && map.brushes.length < 48 * 40 / 3, `${map.brushes.length} brushes`);
 check('player spawn exists', !!map.spawns.player);
 check('9 hostiles + 3 dummies', map.spawns.hostiles.length === 9 && map.spawns.dummies.length === 3, `${map.spawns.hostiles.length}/${map.spawns.dummies.length}`);
 check('two plant zones', !!map.zones.A && !!map.zones.B);
 // A heaven ramp: col 1 rows 5..8 rising north into 2.5 m platform
-const rampTop = hf.heightAt(map.originX + 1 * 2 + 1, map.originZ + 5 * 2 + 0.01);
-const rampBottom = hf.heightAt(map.originX + 1 * 2 + 1, map.originZ + 9 * 2 - 0.01);
+const rampTop = hf.heightAt(grid.originX + 1 * 2 + 1, grid.originZ + 5 * 2 + 0.01);
+const rampBottom = hf.heightAt(grid.originX + 1 * 2 + 1, grid.originZ + 9 * 2 - 0.01);
 check('ramp interpolates 2.5 -> 0', Math.abs(rampTop - 2.5) < 0.05 && Math.abs(rampBottom) < 0.05, `${rampTop.toFixed(2)} / ${rampBottom.toFixed(2)}`);
 check('elevation markers generated', map.elevationMarkers.length >= 3, `${map.elevationMarkers.length}`);
 
@@ -55,7 +57,7 @@ const s = map.spawns.player.pos;
 const down = hf.raycast(s[0], 1.6, s[2], 0, -1, 0, 10);
 check('ray down hits floor at y=0', down && Math.abs(down.y) < 1e-6 && down.ny === 1);
 const south = hf.raycast(s[0], 1.6, s[2], 0, 0, 1, 100);
-check('ray south hits spray wall', south && south.nz === -1 && Math.abs(south.z - (map.originZ + 39 * 2)) < 1e-6, south && south.z.toFixed(2));
+check('ray south hits spray wall', south && south.nz === -1 && Math.abs(south.z - (grid.originZ + 39 * 2)) < 1e-6, south && south.z.toFixed(2));
 
 // ---- movement
 {
@@ -87,13 +89,13 @@ check('ray south hits spray wall', south && south.nz === -1 && Math.abs(south.z 
   // Walk into a wall: no penetration, flush contact.
   const p = spawnPlayer();
   for (let i = 0; i < 400; i++) runPlayerCmd(p, cmd(BTN.BACK), ctxFor(), null);
-  const wallZ = map.originZ + 39 * 2;
+  const wallZ = grid.originZ + 39 * 2;
   check('wall collision flush', p.pos[2] <= wallZ - MOVEMENT.radius + 1e-6 && p.pos[2] > wallZ - MOVEMENT.radius - 0.02, (wallZ - p.pos[2]).toFixed(4));
 }
 {
   // Jump onto a 1.1 m crate (A main crate at col 5,row 24): approach from south.
   const p = spawnPlayer();
-  p.pos = [map.originX + 5 * 2 + 1, 0, map.originZ + 26 * 2 + 1];
+  p.pos = [grid.originX + 5 * 2 + 1, 0, grid.originZ + 26 * 2 + 1];
   let maxY = 0;
   for (let i = 0; i < 160; i++) {
     runPlayerCmd(p, cmd(BTN.FWD | (i === 20 ? BTN.JUMP : 0)), ctxFor(), null);
@@ -104,7 +106,7 @@ check('ray south hits spray wall', south && south.nz === -1 && Math.abs(south.z 
 {
   // Walk up the A heaven ramp onto the platform.
   const p = spawnPlayer();
-  p.pos = [map.originX + 1 * 2 + 1.0, 0, map.originZ + 10 * 2 + 1];
+  p.pos = [grid.originX + 1 * 2 + 1.0, 0, grid.originZ + 10 * 2 + 1];
   for (let i = 0; i < 400; i++) runPlayerCmd(p, cmd(BTN.FWD), ctxFor(), null);
   check('walks up ramp to heaven', Math.abs(p.pos[1] - 2.5) < 1e-6, `y=${p.pos[1].toFixed(2)}`);
 }
@@ -229,7 +231,7 @@ check('ray south hits spray wall', south && south.nz === -1 && Math.abs(south.z 
   server.update(0, 0);
   const p = server.sim.player;
   // Stand in mid, in view of the mid-top bot.
-  p.pos = [map.originX + 26 * 2 + 1, 0, map.originZ + 19 * 2 + 1];
+  p.pos = [grid.originX + 26 * 2 + 1, 0, grid.originZ + 19 * 2 + 1];
   let damaged = false, now = 0;
   for (let i = 0; i < 128 * 8 && !damaged; i++) {
     now += 1000 / 128;
@@ -269,6 +271,52 @@ check('ray south hits spray wall', south && south.nz === -1 && Math.abs(south.z 
   sim.tickWorld(TICK_DT);
   const ev = sim.drainEvents().find((e) => e.type === 'round' && e.phase === 'post');
   check('eliminating every hostile wins the round', ev && ev.result === 'win', ev && ev.reason);
+}
+
+// ---- Dockside 9: brush map, crane layouts, sites, bots on valid floors
+{
+  const dm = compileMap(DOCKSIDE9);
+  const w = new CollisionWorld(dm);
+  check('dockside9 compiles', dm.brushes.length > 300, `${dm.brushes.length} brushes, ${dm.models.length} models`);
+  check('dockside9 9 hostiles + 3 dummies', dm.spawns.hostiles.length === 9 && dm.spawns.dummies.length === 3);
+  check('dockside9 sites A and B', !!dm.zones.A && !!dm.zones.B);
+  check('dockside9 three crane layouts', dm.variants.layouts.length === 3 && dm.crane && Object.keys(dm.crane.objects).length === 6);
+  // Every hostile post stands on a real floor at its authored height (catwalk, nest, deck...).
+  const bad = dm.spawns.hostiles.filter((h) => Math.abs(w.groundBelow(h.pos[0], h.pos[1] + 0.05, h.pos[2]) - h.pos[1]) > 0.06);
+  check('dockside9 hostile posts on floors', bad.length === 0, bad.map((h) => h.pos.map((x) => x.toFixed(1)).join(',')).join(' | '));
+  // Crane layouts really change collision: object A sits in slot v1a in layout 0, v2a in layout 1.
+  const S = dm.crane.slots;
+  w.setVariant(0);
+  const a0 = w.pointSolid(S.v1a.x, 1.0, S.v1a.z, 1), b0 = w.pointSolid(S.v2a.x, 1.0, S.v2a.z, 1);
+  w.setVariant(1);
+  const a1 = w.pointSolid(S.v1a.x, 1.0, S.v1a.z, 1), b1 = w.pointSolid(S.v2a.x, 1.0, S.v2a.z, 1);
+  check('crane layout switches collision', a0 && !b0 && !a1 && b1, `v1a ${a0}->${a1}, v2a ${b0}->${b1}`);
+  // A bullet fired down lane W in layout 0 is stopped by the cross stack; in layout 1 it is not.
+  const lw = S.xw;
+  w.setVariant(0);
+  const hit0 = w.raycast(lw.x, 1.3, lw.z + 8, 0, 0, -1, 16, 2);
+  w.setVariant(1);
+  const hit1 = w.raycast(lw.x, 1.3, lw.z + 8, 0, 0, -1, 16, 2);
+  check('cross stack blocks lane W only when placed', !!hit0 && !hit1);
+  // Planting on B (the pier) wins the round; the barrier is long enough for the crane re-stack.
+  const link = createLoopback();
+  const server = new AuthorityServer(DOCKSIDE9, link);
+  link.up.send({ type: 'join', id: 1, loadout: DEFAULT_LOADOUT, settings: { adsMode: 'hold', difficulty: 'recruit' } }, 0);
+  server.update(0, 0);
+  const sim = server.sim;
+  check('dockside9 barrier fits the crane', sim.rules.barrierTime >= 6, `${sim.rules.barrierTime} s`);
+  sim.round.phase = 'live';
+  sim.round.phaseEnd = sim.time + 60;
+  const z = dm.zones.B;
+  sim.player.pos = [z.x0 + 1, 0, z.z1 - 1];
+  for (const b of sim.bots) b.pos = [0, -50, 0];
+  let result = null;
+  for (let i = 0; i < 128 * 5 && !result; i++) {
+    sim.applyCmd(1, makeCmd(5000 + i, TICK_DT, BTN.PLANT, 0, 0, null, undefined));
+    sim.tickWorld(TICK_DT);
+    for (const e of sim.drainEvents()) if (e.type === 'round' && e.phase === 'post') result = e;
+  }
+  check('planting on B (pier) wins', result && result.result === 'win', result && result.reason);
 }
 
 console.log(failures ? `\n${failures} FAILED` : '\nAll tests passed');

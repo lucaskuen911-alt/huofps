@@ -35,6 +35,8 @@ button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--flare); outline-offset: 2px; }
 
 /* ------------------------------------------------------------------ HUD */
+/* `hidden` must win over the id rules below (display: grid / flex). */
+#stage [hidden] { display: none !important; }
 #hud { position: absolute; inset: 0; pointer-events: none; user-select: none;
   padding: max(14px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
 .shadowed { text-shadow: 0 1px 2px rgba(0,0,0,0.9), 0 0 12px rgba(0,0,0,0.35); }
@@ -229,6 +231,10 @@ kbd { font: 600 11px/1 var(--mono); padding: 4px 6px; border: 1px solid var(--li
 #error[hidden] { display: none; }
 #error div { max-width: 52ch; display: grid; gap: 10px; }
 #error h2 { margin: 0; font: 900 34px/1 var(--display); text-transform: uppercase; color: var(--flare); }
+html.freelook, html.freelook * { cursor: none !important; }
+#freelook-note { position: absolute; left: 50%; bottom: 96px; transform: translateX(-50%); max-width: min(560px, calc(100% - 32px)); text-align: center; font: 500 12px/1.45 var(--ui); color: var(--text); background: var(--panel); border: 1px solid var(--line); padding: 8px 12px; pointer-events: none; transition: opacity 0.6s; }
+#freelook-note b { color: var(--warn); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; margin-right: 6px; }
+#freelook-note.fade { opacity: 0; }
 #resume-hint { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); font: 700 12px/1 var(--ui); letter-spacing: 0.2em; text-transform: uppercase; background: var(--panel); border: 1px solid var(--line); padding: 10px 14px; }
 
 @media (max-width: 860px) {
@@ -283,13 +289,14 @@ kbd { font: 600 11px/1 var(--mono); padding: 4px 6px; border: 1px solid var(--li
   </div>
 
   <div id="resume-hint" hidden>Click to resume</div>
+  <div id="freelook-note" hidden><b>Free-look</b>This view blocks mouse capture. The cursor is hidden and still aims; push it against a screen edge to keep turning. For full mouse capture, open hairline.html in its own browser tab.</div>
 
   <div id="menu">
     <div id="rail">
       <header id="brand">
         <h1>Hairline</h1>
         <div class="hairline"></div>
-        <p>Tactical FPS framework. 128-tick authoritative sim, client prediction, baked lighting, deterministic spray patterns. Map: Saltworks.</p>
+        <p>Tactical FPS framework. 128-tick authoritative sim, client prediction, stylized lighting and authored models, deterministic spray patterns. Flagship map: Dockside 9.</p>
       </header>
       <nav id="tabs" role="tablist">
         <button class="tab" role="tab" aria-selected="true" data-panel="p-play">Play</button>
@@ -299,9 +306,14 @@ kbd { font: 600 11px/1 var(--mono); padding: 4px 6px; border: 1px solid var(--li
       </nav>
 
       <section class="panel" id="p-play">
-        <p class="lede">Clear Saltworks of hostiles or plant the spike on A or B before the clock runs out. Dummies in spawn strafe for warm-up; the back wall of spawn is a 10&nbsp;cm spray grid.</p>
+        <p class="lede">Clear the map of hostiles or plant the spike on A or B before the clock runs out. Dummies in spawn strafe for warm-up.</p>
         <div id="touch-note" class="warn-note" hidden>Hairline needs a keyboard and mouse. You can still browse loadouts and settings here.</div>
-        <button class="cta" id="deploy"><span id="deploy-label">Deploy</span><small id="deploy-sub">Saltworks · 9 hostiles</small></button>
+        <button class="cta" id="deploy"><span id="deploy-label">Deploy</span><small id="deploy-sub">Loading…</small></button>
+        <div class="field">
+          <span class="label">Map</span>
+          <div class="seg" id="map-select"></div>
+          <span class="note" id="map-blurb"></span>
+        </div>
         <div class="field">
           <span class="label">Bot difficulty</span>
           <div class="seg" id="difficulty"></div>
