@@ -165,6 +165,14 @@ export class GameClient {
     for (const m of this.link.down.receive(now)) this.onMessage(m, now);
 
     this.input.onUnlock = () => this.pause();
+    this.input.onFreeLook = (on) => {
+      const note = document.getElementById('freelook-note');
+      if (!note) return;
+      clearTimeout(this.freeLookTimer);
+      note.classList.remove('fade');
+      note.hidden = !on;
+      if (on) this.freeLookTimer = setTimeout(() => note.classList.add('fade'), 9000);
+    };
     this.input.onKey = (e) => {
       if (e.code === 'Backquote') {
         this.profile.settings.showPerf = !this.profile.settings.showPerf;
@@ -236,8 +244,10 @@ export class GameClient {
   async resume() {
     this.audio.init();
     const el = document.documentElement;
+    // Request the pointer lock in the same task as the click (no await before it), so the
+    // user activation is still fresh; fullscreen is optional and runs alongside.
     try {
-      if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+      if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
     } catch (e) {
       /* fullscreen is optional */
     }
